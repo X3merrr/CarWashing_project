@@ -1,0 +1,102 @@
+@startuml
+left to right direction
+
+actor Клиент
+actor Директор
+actor Бухгалтер
+actor Мойщик
+actor "Платежный шлюз" as PaymentGateway #LightBlue
+actor "Внешняя система 1С" as 1C #LightGray
+
+rectangle "Мобильное приложение для клиентов" {
+  usecase (Регистрация) as UC1
+  usecase (Авторизация) as UC2
+  usecase (Управление профилем) as UC3
+
+  usecase (Просмотр каталога услуг и акций) as UC4
+  usecase (Выбор города и точки) as UC5
+  usecase (Выбор бокса и времени) as UC6
+  usecase (Оплатить услугу) as UC7
+  usecase (Отменить бронь) as UC8
+  usecase (Просмотр истории заказов) as UC9
+
+  usecase (Получить QR-код для доступа) as UC10
+  usecase (Получить push-уведомление) as UC11
+
+  UC5 .> UC6 : include
+  UC6 .> UC7 : include
+  UC8 .> UC7 : extend
+  UC7 .> PaymentGateway : sends request
+}
+
+rectangle "Панель управления директора" {
+  usecase (Анализ KPI: доходность, окупаемость) as UCD1
+  usecase (Анализ загруженности боксов) as UCD2
+  usecase (Просмотр статистики по клиентам) as UCD3
+  usecase (Формирование отчета по клиенту) as UCD4
+  usecase (Управление списком VIP-клиентов) as UCD5
+  usecase (Управление тарифами и акциями) as UCD6
+  usecase (Просмотр статистики по мойщикам) as UCD7
+  usecase (Составление графиков работы) as UCD8
+}
+
+rectangle "Рабочее место мойщика" {
+  usecase (Просмотр текущих заданий) as UCW1
+  usecase (Подтвердить начало услуги) as UCW2
+  usecase (Подтвердить завершение услуги) as UCW3
+  usecase (Отметить проблему с авто) as UCW4
+}
+
+rectangle "Системные процессы" {
+  usecase (Синхронизация данных с 1С) as UCA1
+  usecase (Отправить уведомление о записи) as UCA2
+  usecase (Сгенерировать отчет) as UCA3
+}
+
+Клиент --> UC1
+Клиент --> UC2
+Клиент --> UC3
+Клиент --> UC4
+Клиент --> UC5
+Клиент --> UC9
+Клиент --> UC10
+Клиент --> UC11
+
+Директор --> UC2
+Директор --> UCD1
+Директор --> UCD2
+Директор --> UCD3
+Директор --> UCD4
+Директор --> UCD5
+Директор --> UCD6
+Директор --> UCD7
+Директор --> UCD8
+
+Бухгалтер --> UCA3
+
+Мойщик --> UCW1
+Мойщик --> UCW2
+Мойщик --> UCW3
+Мойщик --> UCW4
+
+' Связи с внешними системами
+UC7 --> PaymentGateway
+UCD6 ..> 1C : gets data
+UCA1 ..> 1C : sync
+UCA3 ..> Бухгалтер
+
+' Внутренние системные связи
+UC7 ..> UCA1 : triggers
+UC8 ..> UCA1 : triggers
+UCD6 ..> UCA1 : triggers
+UCD2 ..> UCA3 : uses
+UCD1 ..> UCA3 : uses
+
+UC6 ..> UCA2 : triggers
+UCA2 ..> UC11 : triggers
+
+UCW2 ..> UCA1 : triggers
+UCW3 ..> UCA1 : triggers
+UCW3 ..> UCD7 : updates
+
+@enduml
