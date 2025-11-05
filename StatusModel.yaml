@@ -1,0 +1,23 @@
+Appointment:
+  statuses:
+    - pending: "Ожидает подтверждения"
+    - confirmed: "Подтверждена"
+    - checked_in: "Клиент прибыл"
+    - in_progress: "В процессе мойки"
+    - quality_check: "Контроль качества"
+    - ready: "Автомобиль готов"
+    - completed: "Услуга оказана"
+    - cancelled: "Отменена"
+    
+  transitions:
+    pending -> confirmed: "Подтверждение записи"
+    confirmed -> checked_in: "Клиент прибыл"
+    checked_in -> in_progress: "Начало работы"
+    in_progress -> quality_check: "Работа завершена"
+    quality_check -> ready: "Качество проверено"
+    ready -> completed: "Клиент получил авто"
+    
+  rules:
+    - "Отмена возможна за 1+ часа до записи"
+    - "Автоподтверждение через 30 минут"
+    - "Только администратор может пропустить контроль качества"

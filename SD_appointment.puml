@@ -1,0 +1,124 @@
+@startuml
+actor Клиент
+participant "Сервер API" as Server
+database "База данных" as DB
+
+== Успешное создание записи ==
+
+Клиент -> Server: POST /appointments
+note right: Authorization: Bearer <token>\n{car_id: 123, service_id: 456, box_id: 789, car_wash_id: 1, scheduled_date: "2024-01-15", scheduled_time: "14:00"}
+
+Server -> Server: Валидация JWT токена
+note right: Извлечение user_id из токена
+
+Server -> Server: Валидация входных данных
+note right: Проверка форматов даты, времени, существования ID
+
+Server -> DB: Проверка существования автомобиля
+note right: SELECT * FROM cars WHERE id = ? AND owner_id = ?
+
+DB --> Server: Автомобиль найден и принадлежит пользователю
+
+Server -> DB: Проверка существования услуги
+note right: SELECT * FROM wash_services WHERE id = ? AND car_wash_id = ? AND is_active = true
+
+DB --> Server: Услуга доступна
+
+Server -> DB: Проверка доступности бокса
+note right: SELECT * FROM boxes WHERE id = ? AND car_wash_id = ? AND is_available = true
+
+DB --> Server: Бокс доступен
+
+Server -> DB: Проверка совместимости услуги и бокса
+note right: SELECT * FROM service_box_compatibility WHERE service_id = ? AND box_type = ?
+
+DB --> Server: Совместимость подтверждена
+
+Server -> DB: Проверка отсутствия конфликтующих записей
+note right: SELECT * FROM appointments \nWHERE box_id = ? AND scheduled_date = ? AND scheduled_time = ?\nAND status IN ('pending', 'confirmed')
+
+DB --> Server: Конфликтующих записей нет
+
+Server -> DB: Расчет времени окончания услуги
+note right: SELECT duration_minutes FROM wash_services WHERE id = ?
+
+DB --> Server: Длительность услуги = 45 минут
+
+Server -> DB: Создание записи на мойку
+note right: INSERT INTO appointments (user_id, car_id, service_id, box_id, car_wash_id, scheduled_date, scheduled_time, scheduled_end_time, status, total_price)
+
+DB --> Server: ID созданной записи
+
+Server -> Server: Расчет общей стоимости
+note right: Получение цены услуги и применение скидок
+
+Server -> DB: Обновление общей стоимости
+note right: UPDATE appointments SET total_price = ? WHERE id = ?
+
+DB --> Server: Стоимость обновлена
+
+Server --> Клиент: 201 Created
+note left: {appointment: {id: 111, status: "pending", ...}, message: "Запись создана"}
+
+== Альтернативный поток: Автомобиль не найден ==
+
+Клиент -> Server: POST /appointments
+note right: {car_id: 999, ...}
+
+Server -> Server: Валидация токена и данных
+
+Server -> DB: Проверка существования автомобиля
+DB --> Server: Автомобиль не найден
+
+Server --> Клиент: 404 Not Found
+note left: "Автомобиль не найден"
+
+== Альтернативный поток: Услуга недоступна ==
+
+Клиент -> Server: POST /appointments
+note right: {service_id: 999, ...}
+
+Server -> DB: Проверка существования услуги
+DB --> Server: Услуга не найдена или неактивна
+
+Server --> Клиент: 400 Bad Request
+note left: "Услуга недоступна"
+
+== Альтернативный поток: Бокс занят ==
+
+Клиент -> Server: POST /appointments
+note right: {box_id: 789, scheduled_date: "2024-01-15", scheduled_time: "14:00"}
+
+Server -> DB: Проверка доступности бокса
+DB --> Server: Бокс доступен
+
+Server -> DB: Проверка конфликтующих записей
+DB --> Server: Найдена конфликтующая запись
+
+Server --> Клиент: 409 Conflict
+note left: "Время уже занято"
+
+== Альтернативный поток: Несовместимость услуги и бокса ==
+
+Клиент -> Server: POST /appointments
+note right: {service_id: 456, box_id: 789}
+
+Server -> DB: Проверка совместимости
+DB --> Server: Услуга и бокс несовместимы
+
+Server --> Клиент: 400 Bad Request
+note left: "Данная услуга недоступна в выбранном боксе"
+
+== Дополнительные проверки ==
+
+group Проверка рабочего времени мойки
+    Server -> DB: Получение графика работы мойки
+    note right: SELECT opening_hours FROM car_washes WHERE id = ?
+    DB --> Server: График работы получен
+    
+    alt Время вне рабочего графика
+        Server --> Клиент: 400 Bad Request
+        note left: "Мойка не работает в выбранное время"
+    end
+end
+@enduml

@@ -1,0 +1,200 @@
+@startuml
+actor Клиент
+participant "Сервер авторизации" as Auth
+participant "СМС-шлюз" as SMS
+database "База данных" as DB
+
+== Процесс регистрации нового пользователя ==
+
+Клиент -> Auth: POST /auth/register
+note right: {phone: "+79123456789", name: "Иван"}
+
+Auth -> Auth: Валидация номера телефона
+note right: Проверка формата и допустимости номера
+
+Auth -> DB: Проверка существования пользователя
+note right: SELECT * FROM users WHERE phone = ?
+
+alt Пользователь с таким номером уже существует
+    DB --> Auth: Пользователь найден
+    Auth --> Клиент: 409 Conflict
+    note left: "Пользователь с таким номером уже зарегистрирован"
+else Пользователь не существует
+    DB --> Auth: Пользователь не найден
+    
+    Auth -> Auth: Генерация СМС-кода подтверждения
+    note right: 4-6 цифр, время жизни 5 минут
+    
+    Auth -> DB: Сохранение данных регистрации временно
+    note right: INSERT INTO pending_registrations \n(phone, name, sms_code, expires_at)
+    
+    DB --> Auth: ID временной записи
+    
+    Auth -> SMS: Отправка СМС с кодом подтверждения
+    note right: {to: "+79123456789", text: "Код подтверждения: 123456"}
+    
+    SMS --> Auth: Статус отправки (успешно)
+    
+    Auth --> Клиент: 200 OK
+    note left: {message: "СМС с кодом отправлено", \nregistration_id: "temp_id"}
+end
+
+== Подтверждение регистрации ==
+
+Клиент -> Auth: POST /auth/verify-registration
+note right: {phone: "+79123456789", code: "123456", registration_id: "temp_id"}
+
+Auth -> DB: Поиск временной записи регистрации
+note right: SELECT * FROM pending_registrations \nWHERE phone = ? AND sms_code = ? AND expires_at > NOW()
+
+DB --> Auth: Временная запись найдена
+
+Auth -> DB: Создание пользователя
+note right: INSERT INTO users (phone, name, is_verified, created_at)
+
+DB --> Auth: ID созданного пользователя
+
+Auth -> Auth: Генерация JWT токена
+
+Auth -> DB: Удаление временной записи регистрации
+
+Auth --> Клиент: 201 Created
+note left: {token: "eyJ...", user: {id, phone, name}, \nmessage: "Регистрация завершена"}
+
+== Процесс авторизации существующего пользователя ==
+
+Клиент -> Auth: POST /auth/login
+note right: {phone: "+79123456789"}
+
+Auth -> Auth: Валидация номера телефона
+
+Auth -> DB: Поиск пользователя
+note right: SELECT * FROM users WHERE phone = ?
+
+alt Пользователь не найден
+    DB --> Auth: Пользователь не найден
+    Auth --> Клиент: 404 Not Found
+    note left: "Пользователь не найден. Зарегистрируйтесь."
+else Пользователь найден
+    DB --> Auth: Данные пользователя
+    
+    Auth -> Auth: Генерация СМС-кода для входа
+    note right: 4-6 цифр, время жизни 5 минут
+    
+    Auth -> DB: Сохранение кода входа
+    note right: INSERT INTO login_codes (user_id, code, expires_at)
+    
+    DB --> Auth: ID записи кода
+    
+    Auth -> SMS: Отправка СМС с кодом входа
+    note right: {to: "+79123456789", text: "Код для входа: 654321"}
+    
+    SMS --> Auth: Статус отправки (успешно)
+    
+    Auth --> Клиент: 200 OK
+    note left: {message: "СМС с кодом отправлено", \nlogin_id: "login_temp_id"}
+end
+
+== Подтверждение авторизации ==
+
+Клиент -> Auth: POST /auth/verify-login
+note right: {phone: "+79123456789", code: "654321", login_id: "login_temp_id"}
+
+Auth -> DB: Поиск активного кода входа
+note right: SELECT lc.*, u.* FROM login_codes lc \nJOIN users u ON lc.user_id = u.id \nWHERE u.phone = ? AND lc.code = ? AND lc.expires_at > NOW()
+
+DB --> Auth: Код и пользователь найдены
+
+Auth -> Auth: Генерация JWT токена
+
+Auth -> DB: Удаление использованного кода входа
+
+Auth --> Клиент: 200 OK
+note left: {token: "eyJ...", user: {id, phone, name}}
+
+== Альтернативный поток: Повторная отправка СМС ==
+
+group Для регистрации
+    Клиент -> Auth: POST /auth/resend-registration-sms
+    note right: {phone: "+79123456789", registration_id: "temp_id"}
+    
+    Auth -> DB: Поиск временной записи регистрации
+    DB --> Auth: Запись найдена
+    
+    Auth -> Auth: Генерация нового кода
+    Auth -> DB: Обновление кода в временной записи
+    Auth -> SMS: Отправка нового СМС
+    Auth --> Клиент: 200 OK
+end
+
+group Для авторизации
+    Клиент -> Auth: POST /auth/resend-login-sms
+    note right: {phone: "+79123456789", login_id: "login_temp_id"}
+    
+    Auth -> DB: Поиск записи кода входа
+    DB --> Auth: Запись найдена
+    
+    Auth -> Auth: Генерация нового кода
+    Auth -> DB: Обновление кода входа
+    Auth -> SMS: Отправка нового СМС
+    Auth --> Клиент: 200 OK
+end
+
+== Альтернативный поток: Неверный или просроченный код ==
+
+Клиент -> Auth: POST /auth/verify-registration
+note right: {phone: "+79123456789", code: "wrong_code"}
+
+Auth -> DB: Поиск временной записи
+DB --> Auth: Запись не найдена (неверный код или истек срок)
+
+Auth --> Клиент: 401 Unauthorized
+note left: "Неверный или просроченный код"
+
+== Альтернативный поток: Ошибка отправки СМС ==
+
+Клиент -> Auth: POST /auth/register
+note right: {phone: "+79123456789"}
+
+Auth -> Auth: Валидация
+Auth -> DB: Проверка пользователя
+DB --> Auth: Пользователь не найден
+
+Auth -> Auth: Генерация кода
+Auth -> DB: Сохранение временной записи
+DB --> Auth: ID записи
+
+Auth -> SMS: Отправка СМС
+SMS --> Auth: Ошибка отправки
+note right: "Недостаточно средств", "Неверный номер"
+
+Auth -> DB: Удаление временной записи (откат)
+
+Auth --> Клиент: 503 Service Unavailable
+note left: "Ошибка отправки СМС, попробуйте позже"
+
+== Защита от злоупотреблений ==
+
+group Лимиты запросов
+    Auth -> Auth: Проверка лимита запросов для номера
+    note right: max_requests_per_hour = 5
+    
+    alt Превышен лимит
+        Auth --> Клиент: 429 Too Many Requests
+        note left: "Слишком много запросов, попробуйте через час"
+    end
+end
+
+== Быстрое обновление токена ==
+
+Клиент -> Auth: POST /auth/refresh-token
+note right: {token: "старый_токен"}
+
+Auth -> Auth: Верификация старого токена
+note right: Проверка подписи и срока действия
+
+Auth -> Auth: Генерация нового токена
+
+Auth --> Клиент: 200 OK
+note left: {token: "новый_токен"}
+@enduml

@@ -1,20 +1,26 @@
 openapi: '3.0.3'
 info:
   title: Washing Car API
-  version: '0.1'
+  version: '0.2'
 tags:
-  - name: Cars
-    description: Операции в отношении списка хранимых машин.
   - name: Auth
-    description: Операции аутентификации и управления сессиями
+    description: Аутентификация и регистрация по СМС
   - name: Users
     description: Операции с пользователями
+  - name: Cars
+    description: Операции с автомобилями
+  - name: Appointments
+    description: Записи на мойку
+  - name: CarWashes
+    description: Управление автомойками
+
 servers:
   - url: http://localhost:3000/api/v1
+
 paths:
-  /auth/login:
+  /auth/register:
     post:
-      summary: Аутентификация по номеру телефона и паролю
+      summary: Начало регистрации нового пользователя
       tags:
         - Auth
       requestBody:
@@ -25,17 +31,59 @@ paths:
               type: object
               required:
                 - phone
-                - password
               properties:
                 phone:
                   type: string
                   example: '+79123456789'
-                password:
+                name:
                   type: string
-                  example: 'mysecretpassword'
+                  example: 'Иван'
+                email:
+                  type: string
+                  format: email
+                  example: 'ivan@example.com'
       responses:
         '200':
-          description: Успешная аутентификация
+          description: СМС с кодом отправлено
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: 'СМС с кодом отправлено'
+        '409':
+          description: Пользователь уже существует
+        '400':
+          description: Неверный формат номера
+        '503':
+          description: Ошибка отправки СМС
+
+  /auth/verify-registration:
+    post:
+      summary: Подтверждение регистрации по СМС-коду
+      tags:
+        - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - phone
+                - code
+              properties:
+                phone:
+                  type: string
+                  example: '+79123456789'
+                code:
+                  type: string
+                  example: '123456'
+      responses:
+        '201':
+          description: Регистрация завершена
           content:
             application/json:
               schema:
@@ -47,45 +95,154 @@ paths:
                   user:
                     $ref: "#/components/schemas/User"
         '401':
-          description: Неверные учетные данные
-        '400':
-          description: Некорректный запрос
+          description: Неверный или просроченный код
+        '404':
+          description: Регистрация не начата или номер не найден
+        '429':
+          description: Слишком много попыток
 
-  /auth/logout:
+  /auth/login:
     post:
-      summary: Выход из системы
+      summary: Запрос кода для входа
+      tags:
+        - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - phone
+              properties:
+                phone:
+                  type: string
+                  example: '+79123456789'
+      responses:
+        '200':
+          description: СМС с кодом отправлено
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: 'СМС с кодом отправлено'
+        '404':
+          description: Пользователь не найден
+        '400':
+          description: Неверный формат номера
+
+  /auth/verify-login:
+    post:
+      summary: Подтверждение входа по СМС-коду
+      tags:
+        - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - phone
+                - code
+              properties:
+                phone:
+                  type: string
+                  example: '+79123456789'
+                code:
+                  type: string
+                  example: '654321'
+      responses:
+        '200':
+          description: Успешный вход
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
+                  user:
+                    $ref: "#/components/schemas/User"
+        '401':
+          description: Неверный или просроченный код
+        '404':
+          description: Пользователь не найден
+
+  /auth/refresh-token:
+    post:
+      summary: Обновление JWT токена
       tags:
         - Auth
       security:
         - bearerAuth: []
       responses:
         '200':
-          description: Успешный выход
+          description: Токен обновлен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
         '401':
           $ref: "#/components/responses/Unauthorized"
 
-  /users/register:
+  /auth/resend-registration-sms:
     post:
-      summary: Регистрация нового пользователя
+      summary: Повторная отправка СМС для регистрации
       tags:
-        - Users
+        - Auth
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/UserRegistration"
+              type: object
+              required:
+                - phone
+              properties:
+                phone:
+                  type: string
+                  example: '+79123456789'
       responses:
-        '201':
-          description: Пользователь успешно зарегистрирован
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/User"
-        '400':
-          description: Некорректные данные пользователя
-        '409':
-          description: Пользователь с таким номером уже существует
+        '200':
+          description: СМС отправлено повторно
+        '404':
+          description: Регистрация не начата
+        '429':
+          description: Слишком много запросов
+
+  /auth/resend-login-sms:
+    post:
+      summary: Повторная отправка СМС для входа
+      tags:
+        - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - phone
+              properties:
+                phone:
+                  type: string
+                  example: '+79123456789'
+      responses:
+        '200':
+          description: СМС отправлено повторно
+        '404':
+          description: Пользователь не найден
+        '429':
+          description: Слишком много запросов
 
   /users/{userId}:
     get:
@@ -133,7 +290,7 @@ paths:
               $ref: "#/components/schemas/UserUpdate"
       responses:
         '200':
-          description: Информация успешно обновлена
+          description: Информация обновлена
           content:
             application/json:
               schema:
@@ -145,9 +302,9 @@ paths:
 
   /users/{userId}/cars:
     get:
-      summary: Получить машину (массив машин) по userId.
+      summary: Получить машины пользователя
       tags:
-      - Cars
+        - Cars
       security:
         - bearerAuth: []
       parameters:
@@ -170,8 +327,9 @@ paths:
           $ref: "#/components/responses/NotFound"
         '403':
           $ref: "#/components/responses/Unauthorized"
+
     post:
-      summary: Добавить в список машин пользователя новую машину.
+      summary: Добавить машину пользователю
       tags:
         - Cars
       security:
@@ -189,41 +347,16 @@ paths:
             schema:
               $ref: "#/components/schemas/CarWOId"
       responses:
-        '200': 
-          description: Машина успешно добавлена.
+        '200':
+          description: Машина добавлена
         '404':
           $ref: "#/components/responses/NotFound"
         '403':
           $ref: "#/components/responses/Unauthorized"
-    put:
-      summary: Заменить машину пользователя.
-      tags:
-        - Cars
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: userId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CarWId"
-      responses:
-        '200': 
-          description: Машина успешно заменена.
-        '404':
-          $ref: "#/components/responses/NotFound"
-        '403':
-          $ref: "#/components/responses/Unauthorized"  
 
   /cars/{carId}:
     get:
-      summary: Получить информацию о машине по ID
+      summary: Получить информацию о машине
       tags:
         - Cars
       security:
@@ -246,9 +379,9 @@ paths:
           $ref: "#/components/responses/NotFound"
         '403':
           $ref: "#/components/responses/Unauthorized"
-          
+
     delete:
-      summary: Удалить машину из общего списка.
+      summary: Удалить машину
       tags:
         - Cars
       security:
@@ -261,12 +394,72 @@ paths:
             type: integer
             format: int64
       responses:
-        '200': 
-          description: Машина успешно удалена.
+        '200':
+          description: Машина удалена
         '404':
           $ref: "#/components/responses/NotFound"
         '403':
           $ref: "#/components/responses/Unauthorized"
+
+  /car-washes:
+    get:
+      summary: Получить список автомоек
+      tags:
+        - CarWashes
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: city
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: latitude
+          in: query
+          required: false
+          schema:
+            type: number
+            format: float
+        - name: longitude
+          in: query
+          required: false
+          schema:
+            type: number
+            format: float
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CarWash"
+
+  /appointments:
+    post:
+      summary: Создать запись на мойку
+      tags:
+        - Appointments
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppointmentCreate"
+      responses:
+        '201':
+          description: Запись создана
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Appointment"
+        '400':
+          description: Неверные данные записи
+        '409':
+          description: Время уже занято
 
 components:
   securitySchemes:
@@ -276,12 +469,101 @@ components:
       bearerFormat: JWT
 
   schemas:
+    User:
+      type: object
+      required:
+        - id
+        - phone
+        - is_verified
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 'd67082e5-1a28-4534-8166-12c2a1abebc2'
+        phone:
+          type: string
+          example: '+79123456789'
+        name:
+          type: string
+          example: 'Иван'
+        email:
+          type: string
+          format: email
+          example: 'user@example.com'
+        role:
+          type: string
+          enum: ['customer', 'washer', 'admin']
+          example: 'customer'
+        is_verified:
+          type: boolean
+          example: true
+        car_wash_id:
+          type: integer
+          example: 1
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    UserUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          example: 'Иван'
+        email:
+          type: string
+          format: email
+          example: 'user@example.com'
+
+    CarWash:
+      type: object
+      required:
+        - id
+        - name
+        - address
+        - city
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: 'Мойка №1'
+        address:
+          type: string
+          example: 'ул. Ленина, 1'
+        city:
+          type: string
+          example: 'Москва'
+        latitude:
+          type: number
+          format: float
+          example: 55.7558
+        longitude:
+          type: number
+          format: float
+          example: 37.6173
+        phone:
+          type: string
+          example: '+74951234567'
+        opening_hours:
+          type: object
+          example: {
+            "monday": {"open": "09:00", "close": "21:00"},
+            "tuesday": {"open": "09:00", "close": "21:00"}
+          }
+        is_active:
+          type: boolean
+          example: true
+
     CommonCarFields:
       type: object
       required:
         - gosNumber
         - bodyType
-        - ownerId
       properties:
         vin:
           type: string
@@ -299,15 +581,9 @@ components:
           type: integer
           minimum: 1900
           example: 2011
-        bodyType: 
+        bodyType:
           type: string
           example: 'Sedan'
-        ownerId:
-          type: array
-          items:
-            type: string
-            format: uuid
-          example: ['d67082e5-1a28-4534-8166-12c2a1abebc2']
 
     CarWId:
       allOf:
@@ -320,80 +596,86 @@ components:
               type: integer
               format: int64
               example: 111111
-              
+
     CarWOId:
       allOf:
         - $ref: '#/components/schemas/CommonCarFields'
         - type: object
 
-    User:
+    Appointment:
       type: object
       required:
         - id
-        - phone
-        - email
+        - user_id
+        - car_id
+        - service_id
+        - box_id
+        - car_wash_id
+        - scheduled_date
+        - scheduled_time
+        - status
       properties:
         id:
+          type: integer
+          example: 1
+        user_id:
           type: string
           format: uuid
-          example: 'd67082e5-1a28-4534-8166-12c2a1abebc2'
-        phone:
+        car_id:
+          type: integer
+        service_id:
+          type: integer
+        box_id:
+          type: integer
+        car_wash_id:
+          type: integer
+        scheduled_date:
           type: string
-          example: '+79123456789'
-        email:
+          format: date
+        scheduled_time:
           type: string
-          format: email
-          example: 'user@example.com'
-        firstName:
+          format: time
+        scheduled_end_time:
           type: string
-          example: 'Иван'
-        lastName:
+          format: time
+        status:
           type: string
-          example: 'Иванов'
-        createdAt:
+          enum: ['pending', 'confirmed', 'in_progress', 'completed', 'cancelled']
+        total_price:
+          type: number
+          format: float
+        notes:
           type: string
-          format: date-time
-        updatedAt:
+        created_at:
           type: string
           format: date-time
 
-    UserRegistration:
+    AppointmentCreate:
       type: object
       required:
-        - phone
-        - password
-        - email
+        - car_id
+        - service_id
+        - box_id
+        - car_wash_id
+        - scheduled_date
+        - scheduled_time
       properties:
-        phone:
+        car_id:
+          type: integer
+        service_id:
+          type: integer
+        box_id:
+          type: integer
+        car_wash_id:
+          type: integer
+        scheduled_date:
           type: string
-          example: '+79123456789'
-        password:
+          format: date
+        scheduled_time:
           type: string
-          example: 'mysecretpassword'
-        email:
+          format: time
+        notes:
           type: string
-          format: email
-          example: 'user@example.com'
-        firstName:
-          type: string
-          example: 'Иван'
-        lastName:
-          type: string
-          example: 'Иванов'
-
-    UserUpdate:
-      type: object
-      properties:
-        email:
-          type: string
-          format: email
-          example: 'user@example.com'
-        firstName:
-          type: string
-          example: 'Иван'
-        lastName:
-          type: string
-          example: 'Иванов'
 
     Error:
       type: object
@@ -402,14 +684,30 @@ components:
           type: integer
           format: int32
           minimum: 1
-        description:
+        message:
           type: string
-          
+        details:
+          type: object
+
   responses:
     NotFound:
-      description: Сущность не найдена.
+      description: Сущность не найдена
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     Unauthorized:
-      description: Неавторизованный доступ.
+      description: Неавторизованный доступ
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    BadRequest:
+      description: Неверный запрос
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
 
 security:
   - bearerAuth: []
