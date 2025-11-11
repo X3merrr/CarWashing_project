@@ -1,0 +1,24 @@
+@startuml
+start
+
+:Начало;
+:Черновик;
+
+while (Подтвердить?) is (Нет)
+endwhile
+
+:Оформлен;
+
+if (Отменить?) then (Да)
+  :Отменен;
+  stop
+else (Нет)
+  while (Оплатить?) is (Нет)
+  endwhile
+  
+  :Выполняется;
+  :Завершен;
+  stop
+endif
+
+@enduml
