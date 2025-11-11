@@ -1,0 +1,82 @@
+// Use DBML to define your database structure
+// Docs: https://dbml.dbdiagram.io/docs
+
+Table client {
+  id integer [primary key]
+  name string
+}
+
+Table car{
+  id integer [primary key]
+  name string
+}
+
+table worker {
+  id integer [primary key]
+  name string
+  order_id integer [ref: - order.id]
+  carwash_id integer [ref: - carwash.id]
+}
+
+table carwash{
+  id integer [pk]
+  //worker_id integer [ref: < worker.id]
+  city_id integer [ref: < city.id]
+  service_id integer [ref: < service.id]
+}
+
+table city{
+  id integer [pk]
+  id_district integer [ref: > district.id]
+  name string
+  id_washer integer [ref:< carwash.id]
+}
+
+table district{
+  id integer [pk]
+  name string 
+}
+
+table service{
+  id integer [pk]
+  name string
+  description string
+}
+
+table slot{
+  id integer [pk]
+  date date
+  time time
+}
+
+table box{
+  id integer [pk]
+  id_carwash integer [ref: > carwash.id]
+}
+
+//ZAKAZ
+table order{
+  id integer [primary key]
+  client_id integer [ref: < client.id]
+  car_is integer [ref: - car.id]
+  slot_id integer [ref: - slot.id]
+  box_id integer [ref: - box.id]
+  worker_id integer [ref: - worker.id]
+}
+
+
+//connection tables
+table carwashXservise{
+  id_carwash integer [ref: - carwash.id]
+  id_service integer [ref: - service.id]
+}
+
+table orderXservice{
+  id_order integer [ref: - order.id]
+  id_service integer [ref: - service.id]
+}
+
+Table usersXcars{
+  user_id integer [ref: - client.id]
+  car_id integer [ref: - car.id]
+}
