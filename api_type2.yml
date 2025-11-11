@@ -1,0 +1,302 @@
+openapi: 3.0.0
+info:
+  title: Authentication API
+  version: 1.0.0
+paths:
+  /auth/register:
+    post:
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                phone:
+                  type: string
+                  description: Phone number of the user
+                  example: "+79123456789"
+                name:
+                  type: string
+                  description: Name of the user
+                  example: "Иван"
+      responses:
+        '200':
+          description: SMS with verification code sent successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "CMC с кодом отправлено"
+                  registration_id:
+                    type: string
+                    example: "temp_id"
+        '409':
+          description: User with this phone number already exists
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Пользователь с таким номером уже зарегистрирован"
+  /auth/verify-registration:
+    post:
+      summary: Verify registration with SMS code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                phone:
+                  type: string
+                  description: Phone number of the user
+                  example: "+79123456789"
+                code:
+                  type: string
+                  description: Verification code received via SMS
+                  example: "123456"
+                registration_id:
+                  type: string
+                  description: ID of the registration
+                  example: "temp_id"
+      responses:
+        '201':
+          description: Registration completed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: JWT token for authentication
+                    example: "eyj..."
+                  user:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      phone:
+                        type: string
+                      name:
+                        type: string
+                  message:
+                    type: string
+                    example: "Регистрация завершена"
+        '401':
+          description: Invalid or expired code
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Неверный или просроченный код"
+  /auth/login:
+    post:
+      summary: Log in an existing user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                phone:
+                  type: string
+                  description: Phone number of the user
+                  example: "+79123456789"
+      responses:
+        '200':
+          description: SMS with login code sent successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "CMC с кодом отправлено"
+                  login_id:
+                    type: string
+                    example: "login_temp_id"
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Пользователь не найден. Зарегистрируйтесь."
+        '429':
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Слишком много запросов, попробуйте через час"
+  /auth/verify-login:
+    post:
+      summary: Verify login with SMS code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                phone:
+                  type: string
+                  description: Phone number of the user
+                  example: "+79123456789"
+                code:
+                  type: string
+                  description: Login code received via SMS
+                  example: "654321"
+                login_id:
+                  type: string
+                  description: ID of the login attempt
+                  example: "login_temp_id"
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: JWT token for authentication
+                    example: "eyj..."
+                  user:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      phone:
+                        type: string
+                      name:
+                        type: string
+        '401':
+          description: Invalid or expired login code
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Неверный или просроченный код"
+  /auth/resend-registration-sms:
+    post:
+      summary: Resend registration SMS
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                phone:
+                  type: string
+                  description: Phone number of the user
+                  example: "+79123456789"
+                registration_id:
+                  type: string
+                  description: ID of the registration
+                  example: "temp_id"
+      responses:
+        '200':
+          description: SMS resent successfully
+        '503':
+          description: SMS sending service unavailable
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Ошибка отправки СМС, попробуйте позже"
+  /auth/resend-login-sms:
+    post:
+      summary: Resend login SMS
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                phone:
+                  type: string
+                  description: Phone number of the user
+                  example: "+79123456789"
+                login_id:
+                  type: string
+                  description: ID of the login attempt
+                  example: "login_temp_id"
+      responses:
+        '200':
+          description: SMS resent successfully
+        '503':
+          description: SMS sending service unavailable
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Ошибка отправки СМС, попробуйте позже"
+  /auth/refresh-token:
+    post:
+      summary: Refresh authentication token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                  description: Current authentication token
+                  example: "eyj..."
+      responses:
+        '200':
+          description: New token generated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: New authentication token
+                    example: "новый_токен"
+        '401':
+          description: Invalid or expired token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Неверный или просроченный токен"
